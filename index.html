@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Definite Integration Calculator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #fafafa;
+            --sidebar-width: 360px;
+            --primary-color: #4c51bf;
+            --border-color: #e2e8f0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        body {
+            display: flex;
+            height: 100vh;
+            background-color: var(--bg-color);
+            overflow: hidden;
+        }
+
+        /* Sidebar math inputs */
+        #sidebar {
+            width: var(--sidebar-width);
+            background: white;
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.03);
+            z-index: 10;
+        }
+
+        h2 {
+            font-size: 1.2rem;
+            color: #2d3748;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #718096;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.2s;
+            background: #f7fafc;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            background: white;
+            box-shadow: 0 0 0 3px rgba(76, 81, 191, 0.15);
+        }
+
+        .bounds-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        /* Result display display box */
+        #result-box {
+            margin-top: auto;
+            background: #ebf4ff;
+            border: 1px solid #bee3f8;
+            border-radius: 10px;
+            padding: 15px;
+        }
+
+        .result-label {
+            font-size: 0.9rem;
+            color: #2b6cb0;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        #result-value {
+            font-size: 1.4rem;
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: 700;
+            color: #2c5282;
+            word-break: break-all;
+        }
+
+        .error-message {
+            color: #e53e3e;
+            font-size: 0.85rem;
+            margin-top: 5px;
+            display: none;
+        }
+
+        /* Graph viewport area */
+        #graph-container {
+            flex-grow: 1;
+            position: relative;
+            padding: 20px;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <h2>Integration Calculator</h2>
+        
+        <div class="input-group">
+            <label for="function-input">Function f(x)</label>
+            <input type="text" id="function-input" value="x * sin(x)" placeholder="e.g., x^2 + 2*x">
+            <div id="input-error" class="error-message">Invalid mathematical expression.</div>
+        </div>
+
+        <div class="bounds-row">
+            <div class="input-group">
+                <label for="bound-a">Lower Bound (a)</label>
+                <input type="number" id="bound-a" value="0" step="any">
+            </div>
+            <div class="input-group">
+                <label for="bound-b">Upper Bound (b)</label>
+                <input type="number" id="bound-b" value="6.283" step="any">
+            </div>
+        </div>
+
+        <div id="result-box">
+            <div class="result-label">Definite Integral Value</div>
+            <div id="result-value">0.00</div>
+        </div>
+    </div>
+
+    <div id="graph-container">
+        <canvas id="graphCanvas"></canvas>
+    </div>
+
+    <script>
+        // DOM Elements
+        const funcInput = document.getElementById('function-input');
+        const boundAInput = document.getElementById('bound-a');
+        const boundBInput = document.getElementById('bound-b');
+        const resultValue = document.getElementById('result-value');
+        const inputError = document.getElementById('input-error');
+        const ctx = document.getElementById('graphCanvas').getContext('2d');
+
+        let chart;
+
+        // Numerical integration using Simpson's Rule
+        function calculateIntegral(f, a, b, n = 1000) {
+            if (n % 2 !== 0) n++; // Simpson's rule requires an even number of intervals
+            const h = (b - a) / n;
+            let sum = f(a) + f(b);
+
+            for (let i = 1; i < n; i++) {
+                const x = a + i * h;
+                sum += (i % 2 === 0 ? 2 : 4) * f(x);
+            }
+            return (h / 3) * sum;
+        }
+
+        // Generate data arrays for Chart.js
+        function updateGraphAndCalculations() {
+            const exprString = funcInput.value;
+            const a = parseFloat(boundAInput.value);
+            const b = parseFloat(boundBInput.value);
+
+            if (isNaN(a) || !isFinite(a) || isNaN(b) || !isFinite(b)) return;
+
+            try {
+                // Compile the math.js expression
+                const compiledExpr = math.compile(exprString);
+                const f = (x) => compiledExpr.evaluate({ x: x });
+
+                // Test if expression functions correctly on a dummy number
+                f(0);
+                inputError.style.display = 'none';
+
+                // 1. Calculate definite integral
+                const integralResult = calculateIntegral(f, a, b);
+                resultValue.innerText = Number(integralResult.toFixed(5)).toString();
+
+                // 2. Determine visible X window (padding around bounds [a, b])
+                const padding = Math.max(Math.abs(b - a) * 0.4, 2);
+                const xMin = Math.min(a, b) - padding;
+                const xMax
